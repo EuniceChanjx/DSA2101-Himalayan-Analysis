@@ -1,0 +1,530 @@
+---
+title: "DSA2101 Project"
+
+author: "Team Manifest"
+date: "2025-03-29"
+output: 
+  html_document:
+    df_print: paged
+    highlight: haddock
+    toc: TRUE
+    toc_float: TRUE
+    toc_depth: 6
+    number_sections: TRUE
+    thumbnails: FALSE
+    code_folding: show
+    DT: datatable
+    urlcolor: lightblue
+---
+<style>
+
+#TOC {
+  background-color: #f0f8ff; 
+  color: #1a1a1a;
+  border: 2px solid #b0c4de; 
+  border-radius: 10px;
+  padding: 15px;
+  box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.1);
+  font-family: "Helvetica", sans-serif;
+}
+
+
+body {
+  background: linear-gradient(to bottom, #f9f9f9, #eef6f9); 
+  color: #1a1a1a;
+  font-family: "Helvetica", sans-serif;
+  line-height: 1.6;
+  padding: 20px;
+}
+
+
+pre {
+  background-color: #fefefe;
+  border-left: 4px solid #4682b4;
+  padding: 10px;
+  font-family: "Courier New", monospace;
+  color: #2c3e50;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+</style>
+```{r setup, include = FALSE}
+# Global options for the RMarkdown document
+knitr::opts_chunk$set(include = TRUE,
+                      message = FALSE, warning = FALSE, 
+                      fig.align = "center",  out.width = "80%", echo =FALSE)
+library(tidyverse)
+library(tidytuesdayR)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(ggrepel) 
+library(viridis)
+library(ggthemes)
+```
+
+
+# Research Question:
+
+How does climbing difficulty vary across the top 10 most popular mountain ranges?
+
+# Introduction
+<div style="text-align: justify;">
+The Himalayan climbing data set provides valuable information documenting mountaineering expeditions in the Nepal Himalaya. The Himalayan region has seen a continuous increase in number of expeditions from both beginners and experienced climbers alike. With individuals conducting several expeditions to the Himalayans every year, it is pivotal and informative for us to discuss the climbing difficulty across different Mountain ranges, to provide a comprehensive analysis for people who are looking carry out expeditions in these areas.  \n\
+In our analysis, we aim to find out how climbing difficulties vary across the top 10 mountain ranges by popularity. We have chosen to explore the top 10 mountain ranges as it accounts for 95% of total expeditions in the dataset (as seen from our exploratory data analysis). We will do so by analysing the climbing difficulties for each route through 3 main areas as explained below: \n\
+
+1. Evaluating the physical strenuity of climbing different mountain ranges through a bubble plot. We aim to explore the relationships between the different factors that may influence the outcome of the expedition. 
+
+2. Evaluating the termination reasons for failed expeditions by exploring the proportions of termination reasons across various mountain ranges through a stacked bar chart.
+
+3. Evaluating difficulty by how fast climbers take to summit across different mountain ranges. We aim to explore the time needed to summit relative to mean peak height, that is, the number of days needed per meter of elevation. 
+</div>
+
+
+# Data Description
+<div style="text-align: justify;">
+This data was retrieved from the TidyTuesday Project. It comprises of information from the `exped_tidy` dataset and the `peaks_tidy` dataset. We are interested in variables that can be used to assess the climbing difficulty of a Mountain Range, such as `O2USED`, `HEIGHTM` and `TERMREASON_FACTOR`, all of which will be further documented in our [Summary Statistics](#summary-statistics).
+</div>
+
+```{r, include = FALSE}
+exped <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-01-21/exped_tidy.csv')
+peaks <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-01-21/peaks_tidy.csv')
+
+```
+# Data Cleaning and its Rationale
+<div style="text-align: justify;">
+Firstly, we left join the `exped_tidy` and `peaks_tidy` dataset by `PEAKID`. Since we are concerned about climbing conditions by mountain range, we can remove human factors such as agency, nation and leadership. Smaller details such as the dates and times when the climbers reach summit will also be removed. From initial exploration, columns referring to routes 3 and 4 are completely NULL and are also removed. As we are interested in the overall success rates of people ascending the mountain range, we will summarise the success columns into 1. Additionally, we are also interested in exploring routes which are open and listed for individuals to climb, as these are routes that are typically open for expeditions. Our decision is further supported by the post-analysis that open and listed routes take up 98% of expeditions. Next, we clean the data by looking at the relationship between success and term reason. From analysis, we can see that there is 1 instance where success was achieved, but a wrong termination reason was stated, and vice versa. Hence, we will be removing these 2 data points as well. Based on the distribution of expeditions across mountain ranges, our analysis tells us that 95% of total attempted expeditions fall in the top 10 most popular mountain ranges. Hence, we will be narrowing our scope to the top 10 mountain ranges. Lastly, we have also chosen to remove rows where `SMTDAYS == 0` (summit days), as we deem it logically infeasible for a mountain range to be climbed in 0 days. We will then be working on adding in the new variables needed for plotting, mainly 1. Mean peak heights for each mountain range, 2. Mean hired personels, 3. Mean number of days needed to hike the mountain, 4. O2 usage percentage in a specific mountain range.
+</div>
+```{r, include = FALSE}
+#checking for feasibility of join
+check1<- anti_join(exped, peaks, by = ("PEAKID"))
+check2 <-sum(is.na(exped$PEAKID))
+check3 <-count(peaks, PEAKID) %>% filter(n>1)
+check4 <-count(exped, EXPID) %>% filter(n>1)
+
+#left join data
+himalayans <- left_join(exped, peaks, by = ("PEAKID"))
+# performing a simple check on left_join
+himalayans_check <- himalayans %>%
+  select(HIMAL_FACTOR, HEIGHTM)
+```
+
+```{r, include =FALSE}
+himalayans_cleaned <- himalayans %>% 
+  ## drop cols that are related to seasons and routes
+  select(-(SEASON:ROUTE4), -(ACCIDENTS:LOCATION)) %>% 
+  ## drop cols that are completely NA (regarding route3 and 4, and parapenting)
+  select(-(SUCCESS3:SUCCESS4), -PARAPENTE) %>% 
+  ## drop cols relating to members
+  select(-(NATION:SPONSOR), 
+         -COUNTRIES, 
+         -(TRAVERSE:ROPE),
+         -matches("HOST")) %>% 
+  ## drop cols referring to dates
+  select(-matches("TIME")) %>% 
+  ## drop cols about detailed O2 usage and campsite details
+  select(-(O2NONE:ROUTEMEMO)) %>% 
+  ## drop cols regarding first summit to peak
+  select(-HEIGHTF, -(PSTATUS:PHOTOMEMO), -HIGHPOINT) %>% 
+  ## drop overly-granular columns
+  select(-(REGION:REGION_FACTOR), 
+         -(CLAIMED:APPROACH),
+         -TERMNOTE,
+         -TREKYEAR,
+         -matches("ASCENT"),
+         -RESTRICT,
+         -HIMAL)
+```
+
+```{r, include=FALSE}
+#comparing success 1 and success 2
+contingencyTable2 <- table(himalayans_cleaned$SUCCESS1, himalayans_cleaned$SUCCESS2)
+dimnames(contingencyTable2) <- list("success1" = c("FALSE", "TRUE"), "success2" = c("FALSE", "TRUE"))
+contingencyTable2
+
+#MUTATING SUCCESS TO DATASET
+himalayans_cleaned1 <- himalayans_cleaned %>%
+  mutate(SUCCESS = ifelse(SUCCESS1 == TRUE | SUCCESS2 == TRUE, TRUE, FALSE), .after = SUCCESS2)
+```
+
+```{r, include = FALSE}
+#Exploring the relationship between open and unlisted
+contingencyTable3 <- table(himalayans_cleaned$OPEN, himalayans_cleaned$UNLISTED)
+dimnames(contingencyTable3) <- list("OPEN" = c("FALSE", "TRUE"), "UNLISTED" = c("FALSE", "TRUE"))
+contingencyTable3
+```
+```{r, include = FALSE}
+openAndListedExp <- 864/882
+openAndListedExp #to check the percentage 
+```
+
+```{r, include = FALSE}
+#to check if success and termination reasons match
+contingencyTable4 <- table(himalayans_cleaned1$SUCCESS, (himalayans_cleaned1$TERMREASON == 1))
+dimnames(contingencyTable4) <- list("success" = c("FALSE", "TRUE"), "termReason" = c("FALSE", "TRUE"))
+contingencyTable4
+
+#further cleaning the dataset
+himalayans_cleaned2 <- himalayans_cleaned1 %>% 
+  select(-(SUCCESS1:SUCCESS2)) %>% 
+  ## filter to open and listed routes
+  filter(OPEN == TRUE, UNLISTED == FALSE) %>% 
+  ## remove inconsistent observations
+  filter(!(SUCCESS == TRUE & TERMREASON != 1) & !(SUCCESS == FALSE & TERMREASON == 1)) %>% 
+  select(-OPEN, -UNLISTED)
+
+```
+
+```{r, include = FALSE}
+#to check which mountain ranges to use
+mountRangeExploration <- count(himalayans_cleaned2, HIMAL_FACTOR) %>% 
+  mutate(`proportion (%)` = round(n/nrow(himalayans_cleaned1)*100, 3)) %>% 
+  arrange(desc(`proportion (%)`))
+#top 10 chosen range
+chosenRanges <- mountRangeExploration$HIMAL_FACTOR[1:10]
+chosenRanges
+# choose only top 10
+himalayans_new <- himalayans_cleaned2 %>% 
+  filter(HIMAL_FACTOR %in% chosenRanges)
+```
+
+
+```{r, include = FALSE}
+#mean height of each open and listed, top10 mountain range
+himalayans_new1 <- himalayans_new %>%
+  group_by(HIMAL_FACTOR) %>%
+  mutate(MEAN_HEIGHT = mean(HEIGHTM, na.rm = TRUE) ,.after = HEIGHTM) %>%
+  ungroup()
+
+# after exploring the data, we found that this dataset (himalayans_new2) which adds in a col titled PERCENTOF_NONTREK does not aid in our analysis. The purpose of including this code here is to showcase what we considered as we explore the data
+himalayans_new2 <- himalayans_new1 %>%
+  group_by(HIMAL_FACTOR) %>%
+  mutate(
+  TOTALPEAKS = n(),
+  NONTREKPEAKS = sum(TREKKING == FALSE, na.rm = TRUE),
+  PERCENTOF_NONTREK = (NONTREKPEAKS / TOTALPEAKS) * 100
+  ) %>%
+  select(-c(TOTALPEAKS, NONTREKPEAKS), TREKKING) %>%
+  ungroup()
+
+#mean hired personel for each mountain range
+himalayans_new3 <- himalayans_new2 %>%
+  group_by(HIMAL_FACTOR)%>%
+  mutate(MEAN_HIRED = weighted.mean(TOTHIRED, w = HEIGHTM, na.rm = TRUE), .after= TOTHIRED) %>%
+  select(-(TOTMEMBERS:TOTHIRED), -(SMTHIRED:NOHIRED)) %>% 
+  ungroup()
+
+# finding mean days to get to the top
+himalayans_new4 <- himalayans_new3 %>%
+  group_by(HIMAL_FACTOR) %>%
+  mutate(SMTDAYS = na_if(SMTDAYS, 0)) %>%
+  filter(!is.na(SMTDAYS)) %>%
+  mutate(WEIGHTED_MEAN_DAYS = weighted.mean(SMTDAYS, w = HEIGHTM, na.rm = TRUE), .after = SMTDAYS) %>%
+  select(-(BCDATE:SMTDATE), -(TOTDAYS:TERMDATE)) %>% 
+  ungroup()
+
+#finding percentage of people using o2 in that mountain range
+himalayans_new5 <- himalayans_new4 %>%
+  group_by(HIMAL_FACTOR) %>%
+  mutate(
+    total_climbers = n(),
+    o2_users = sum(`O2USED`==TRUE, na.rm=TRUE),
+    PERCENT_O2 = (o2_users / total_climbers) * 100,
+    .after = O2USED) %>%
+  select(-c(total_climbers, o2_users)) %>%
+  ungroup()
+```
+
+# Summary Statistics
+Below details the variables that are relevant in our final dataset:
+```{r}
+himalayans_new5 <- himalayans_new5 %>%
+  mutate(YEAR = as.factor(YEAR),
+         TERMREASON_FACTOR = as.factor(TERMREASON_FACTOR),
+         HIMAL_FACTOR = as.factor(HIMAL_FACTOR)) 
+glimpse(himalayans_new5)
+```
+<div style="text-align: justify;">
+Below is an overview that serves as a summary statistic detailing the popularity of a mountain range in terms of number of expeditions, pushing us to understand the different climbing conditions in these top 10 mountain ranges. 
+</div>
+```{r}
+ggplot(himalayans_new5, aes(HIMAL_FACTOR)) +
+  geom_bar(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Distribution of Top 10 most popular mountain ranges",
+       x = "",
+       y = "Number of expeditions") +
+  theme_minimal()
+```
+
+
+# Plot 1: Identifying the physical strenuity of climbing mountains of different ranges through a bubble plot
+## Introduction to Plot 1
+<div style="text-align: justify;">
+In the first plot, we aim to find out the climbing success rate in relation to the mean peak height, average O2 used, as well as mean hired personnel. By integrating these variables, the plot offers a multidimensional perspective on the physical, logistical and physiological challenges faced by climbers in different mountain ranges.
+</div>
+## Dataframe for Plot 1
+<div style="text-align: justify;">
+We aggregated the number of successes for each mountain range and presented it as a percentage of the total expeditions called success rate. Then we selected the required variables `HIMAL_FACTOR`, `MEAN_HEIGHT`, `SUCCESS_RATE`, `MEAN_HIRED` and `PERCENT_O2`. We also mutated the names for Kangchenjunga/Simhalila and Manaslu/Mansiri keeping only Kangchenjunga and Manaslu for better clarity and formatting in our plots.
+</div>
+```{r, include = FALSE}
+plot1df <- himalayans_new5 %>%
+  group_by(HIMAL_FACTOR) %>%
+  mutate(
+    total = n(),
+    successes = sum(SUCCESS == TRUE),
+    SUCCESS_RATE = round((successes/total) * 100)
+    ) %>%
+  ungroup() %>%
+  select(HIMAL_FACTOR, MEAN_HEIGHT, SUCCESS_RATE, MEAN_HIRED, PERCENT_O2) %>%
+  unique() %>%
+  mutate(
+    HIMAL_FACTOR = case_when(
+      HIMAL_FACTOR == "Kangchenjunga/Simhalila" ~ "Kangchenjunga",
+      HIMAL_FACTOR == "Manaslu/Mansiri" ~ "Manaslu",
+      TRUE ~ HIMAL_FACTOR
+    )
+  )
+```
+
+## Plot 1
+```{r Figure 1, fig.cap = "Plot 1. Bubble plot of Himalayan climbing success rates across different mountain ranges where altitude, oxygen use and number of hired personnel influence expedition outcomes."}
+set.seed(42)
+jitter_pos <- position_jitter(width = 0.1, height = 3)
+
+plot1df %>%
+  ggplot(aes(x = MEAN_HEIGHT, y = SUCCESS_RATE, color = PERCENT_O2, size = MEAN_HIRED)) +
+  geom_point(position = jitter_pos) +
+  geom_text_repel(
+  aes(label = HIMAL_FACTOR), size = 2.5, color = "black",hjust=0.1, vjust = 0.3, nudge_x = 25, segment.color = NA) +
+  scale_color_gradient(low = "steelblue3", high = "coral2", name = "Average O2 used in %") +
+  guides(
+    size = guide_legend(override.aes = list(color = "grey")),
+    color = guide_colorbar()
+  ) +
+  scale_size(range = c(3, 14), name = "Mean Hired Personnel") +
+  labs(title = "Climbing Success Rate by Mean Peak Height",
+       x = "Mean Peak Height (m)",
+       y = "Success Rate (%)") +
+    theme_minimal() +
+  theme(
+    panel.grid.major.x = element_line(
+      color = "grey70", linetype = "dashed", size = 0.4),     # Remove all major gridlines
+    panel.grid.minor = element_blank(),     # Remove all minor gridlines
+    panel.grid.major.y = element_line(      # Add horizontal lines back
+      color = "grey70", linetype = "dashed", size = 0.4
+    )
+  ) +
+  ylim(0, 100) +
+  xlim(NA, 8400)
+```
+
+
+## Data Analysis for Plot 1
+<div style="text-align: justify;">
+Firstly, as expected, a general trend emerges where success rates tend to decrease with increasing altitude, reflecting the heightened physical and logistical challenges of climbing taller mountain ranges. This is particularly evident in the ranges Jugal, Damodar and Rolwaling with relatively high success rates of around 70% with relatively low mean peak heights of around 6400m. On the other hand, Dhaulagiri, Manaslu and Makalu have the lowest success rates of about 30% with some of the highest mean peak heights ranging from 7900 - 8300m (averages to about 8100m). 
+
+The colour gradient representing oxygen usage further supports this pattern. Ranges with lower mean peak heights are coloured blue while ranges with higher peak heights are coloured red, indicating the higher reliance on oxygen at higher altitudes. Additionally, the bubble sizes representing the mean number of hired personnel generally increase with higher mean peak height. This suggests that climbers tend to require more help from experienced professionals like Sherpas and guides to help climbers carry loads, provide technical support (e.g. fix ropes) and make critical decisions on timing, route and safety to aid in more difficult climbs of higher altitudes. 
+
+However, there are 3 anomalies that stand out, namely Annapurna, Khumbu and Kangchenjunga. Despite the high mean peak heights ranging from 7800 - 8200m, they maintain high success rates of around 75%, defying the pre-conceived trend. A potential reason could be the larger number of hired professional personnels were actually effective in supporting climbers to succeed in their expeditions at these ranges. Alternatively, in Plot 2 we can see that high technical difficulty is not a termination reason for Annapurna. Also, it only makes up a small proportion of the already low rates of failed expeditions in Khumbu and Kangchenjunga. Therefore, technical challenges are not the primary obstacle in these 3 ranges – climbers can handle the terrain when the weather is good. This could imply that these ranges attract highly skilled mountaineers. The combination of these potential reasons could have contributed to their relatively high success rates. 
+
+Furthermore, it is interesting to note that out of the 3 anomalies, Khumbu has the highest success rate of 80% (second highest overall). It is the most explored range making up 54.9% of all expeditions (as per our exploratory data analysis) likely because it holds the highest, most visited peak – Everest (Boscoe, 2023). As such, climbers exploring the Khumbu range may benefit from better route familiarity and documentation on ideal climbing seasons to avoid bad conditions, for example, avalanche prone zones like the Khumbu Icefall (Shrestha, 2024). This is backed by Plot 2 where a relatively smaller proportion of about 18.6% of termination reasons is contributed by bad conditions (deep snow, avalanching, falling ice, or rock). The Khumbu range also has more well-established infrastructure and better logistical support in place to support the high volume of climbers (Benavides, 2025; Wilkinson, 2012).
+</div>
+
+# Plot 2: Exploring the proportions of termination reasons across various mountain ranges 
+
+## Introduction to Plot 2
+<div style="text-align: justify;">
+This next plot is used to analyse distribution of expedition failure causes across mountain ranges, comparing how termination reasons such as weather and health challenges vary between different ranges while also revealing the dominant risk factors within each specific range.
+</div>
+## Dataframe for Plot 2
+<div style="text-align: justify;">
+We first removed unwanted termination reasons that are not helpful in assessing the failures of climbing a mountain range, which are those that document successes in expeditions. Similar to plot 1, we mutated the names for Kangchenjunga/Simhalila and Manaslu/Mansiri keeping only Kangchenjunga and Manaslu for better clarity and formatting in our plots. Then, we aim to find the number of different termination reasons for each mountain range.
+</div>
+```{r, include= FALSE}
+plot2df <- himalayans_new5 %>%
+  filter(TERMREASON != 1, TERMREASON != 2, TERMREASON != 3) %>%
+  mutate(
+    HIMAL_FACTOR = case_when(
+      HIMAL_FACTOR == "Kangchenjunga/Simhalila" ~ "Kangchenjunga",
+      HIMAL_FACTOR == "Manaslu/Mansiri" ~ "Manaslu",
+      TRUE ~ HIMAL_FACTOR
+    )
+  ) %>%  
+  group_by(HIMAL_FACTOR) %>% 
+  mutate(count = n()) %>% 
+  ungroup()
+plot2df
+```
+
+## Plot 2
+
+```{r fig.cap = "Plot 2. Stacked bar chart showing proportions of termination reasons in percentage across the top 10 popular mountain ranges in Himalayas where most of the failed expeditions across and within ranges are the result of bad conditions and weather."}
+plot2df %>% 
+  ggplot(aes(x = HIMAL_FACTOR, fill = TERMREASON_FACTOR)) +
+  geom_bar(position = "fill") +
+  geom_text(
+    aes(label = after_stat(count)),
+    stat = "count",
+    position = position_fill(vjust = 0.5),
+    size = 3,
+    color = "white"  
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(scale = 100))+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), 
+        legend.position = "right") +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    legend.key.size = unit(0.5, "cm"),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(title = "Percentage Distribution of Reasons for Failed Expeditions", 
+       subtitle="Numbers indicate count of termination reasons",
+       x = "\nMountain Range",
+       y = "Percentage (%)",
+       fill = "Termination Reasons") +
+  scale_fill_viridis_d(option = "D", begin = 0.1, end = 1, direction = -1, 
+                    labels = c("Accident (death or serious injury)" = "Accident",
+                               "Bad conditions (deep snow, avalanching, falling ice, or rock)" = "Bad conditions", 
+                               "Bad weather (storms, high winds)" = "Bad weather",
+                               "Illness, AMS, exhaustion, or frostbite" = "Illnesses",
+                               "Lack (or loss) of supplies, support or equipment" = "Logistical disruption", 
+                               "Lack of time" = "Lack of time",
+                               "Route technically too difficult, lack of experience, strength, or motivation" = "High technical difficulty",
+                               "Other" = "Other"
+                               ))
+```
+
+
+## Data Analysis for Plot 2
+<div style="text-align: justify;">
+While success rates provide one perspective, examining the causes of failed expeditions offers equally valuable insights for risk management and climbing preparation. Our analysis of Plot 2 reveals that weather-related issues, particularly storms and high winds, account for a significant portion of failures across almost all ranges except Annapurna. However, some patterns require careful interpretation. For instance, Damodar shows 100% weather-related failures, but these conclusions stem from just one expedition, making it statistically limited. 
+
+Annapurna and Manaslu demonstrate near-total dependence on bad conditions, namely environmental hazards, with avalanches, deep snow, and falling ice or rock causing about 75% of failures each. Time constraints emerge as another critical factor, particularly in high-altitude ranges. Approximately 33% of failures in Rolwaling, 15% in Manaslu, and 7% in Dhaulagiri cite "lack of time" as the primary reason - a trend likely linked to the extreme elevations (around 8,000m) of these peaks in Manaslu and Dhaulagiri as seen in Plot 1. Rolwaling’s disproportionate rate may also reflect inexperience among climbers, as the range sees fewer hired professionals. Health-related illnesses, including altitude sickness (AMS), exhaustion, and frostbite, further elevates the risks, accounting for 7% to 25% of failures in Dhaulagiri, Jugal, Khumbu, Makalu, Manaslu, and Peri. Given that all these peaks exceed 6000m, the prevalence of medical issues aligns with research that claims travelling to more than 2500m in Himalayan mountains is a risk for developing high altitude illnesses (Lamichhane et al., 2022). 
+
+Technical and logistical hurdles, though less common, are highly range-specific. Only Khumbu, Kangchenjunga, and Peri report technical difficulty, highlighting their lack of experience and motivation as a failure cause (5%, 16% and 11% of cases, respectively). Peri and Annapurna uniquely struggle with logistical disruption, indicating equipment and support shortages. Peri’s exceptionally fast ascent rate (2 days/km) from Plot 3 could have lead to rushed preparation or premature resource depletion unable to continue on with their expedition. Furthermore, Khumbu and Dhaulagiri, both ranges with mean peak heights around 8,000m, are the only two to reflect accidents due to death or serious injury (2% and 7% of cases, respectively). This aligns with the higher proportion of failed expeditions in these ranges, underscoring their extreme challenges.
+
+The plots also reveal a clear correlation between peak elevation and expedition failures. Lower-altitude ranges like Jugal, Damodar, and Rolwaling demonstrate significantly fewer failed expeditions compared to their higher-altitude counterparts. This pattern suggests these mountains present relatively more manageable climbing challenges. In contrast, high-elevation ranges such as Khumbu and Dhaulagiri show substantially higher failed expeditions, reflecting their challenges, mainly the bad weather, conditions, and physiological demands of extreme-altitude mountaineering. Importantly, this visualisation goes beyond descriptive analysis whereby it offers practical, actionable insights into the dominant challenges - whether technical, physical, or medical which can vary significantly from range to range. This can provide invaluable information to expedition teams to customise preparation, training and resource allocation based on specific demands of each mountain range.
+</div>
+
+# Plot 3: Time needed to reach the peak of a mountain range relative to the height of the mountain range
+## Introduction to Plot 3
+<div style="text-align: justify;">
+In this final plot, we examine how summit duration varies relative to peak height across mountain ranges, using linear regression to highlight differences in time required per kilometer of elevation gain.
+</div>
+## Dataframe for Plot 3
+<div style="text-align: justify;">
+To reduce the impact of extreme values across mountain ranges, we applied the interquartile range (IQR) method to filter out outliers. Only summit durations within 1.5 times the IQR from the first and third quartiles were retained, ensuring that the plotted points reflect typical expedition experiences.
+</div>
+```{r}
+himalayans_new6 <- himalayans_new5 %>% 
+  select(HEIGHTM,HIMAL_FACTOR,SMTDAYS) %>%
+  mutate(
+    HIMAL_FACTOR = case_when(
+      HIMAL_FACTOR == "Kangchenjunga/Simhalila" ~ "Kangchenjunga",
+      HIMAL_FACTOR == "Manaslu/Mansiri" ~ "Manaslu",
+      TRUE ~ HIMAL_FACTOR
+    )
+  )
+
+Q1 <- quantile(himalayans_new6$SMTDAYS, 0.25, na.rm = TRUE)
+Q3 <- quantile(himalayans_new6$SMTDAYS, 0.75, na.rm = TRUE)
+IQR_value <- IQR(himalayans_new6$SMTDAYS, na.rm = TRUE)
+
+#define the bounds for outliers
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q3 + 1.5 * IQR_value
+
+#filter out outliers
+df_filtered <- himalayans_new6 %>%
+  filter(SMTDAYS >= lower_bound & SMTDAYS <= upper_bound)
+```
+<div style="text-align: justify;">
+After removing outliers, we used linear regression to calculate the average number of summit days required per meter of elevation for each mountain range. Only ranges with more than 20 observations were included to ensure the reliability of the linear regression models. Linear models can be heavily influenced by small sample sizes, which may lead to unstable or unrepresentative slope estimates. By setting this threshold, we aim to capture meaningful and generalisable trends in summit duration relative to peak height.The resulting slopes were then scaled to days per kilometer and used to create ordered labels in the plot for clearer comparison.
+</div>
+```{r}
+#calculate slopes without outliers
+slopes_clean <- df_filtered %>%
+  group_by(HIMAL_FACTOR) %>%
+  mutate(
+    slope_per_m = lm(SMTDAYS ~ HEIGHTM)$coefficients[2],
+    slope_per_km = 1000 * slope_per_m,
+    n_obs = n()  #show how many data points remain
+    ) %>%
+  filter(n_obs >20) #filtering for data points>20
+
+final_df <-slopes_clean %>%
+  mutate(range_label = paste0(HIMAL_FACTOR, " (", round(slope_per_km, 1), " d/km)"))%>%
+  mutate(range_label =  factor(range_label,levels = c( "Khumbu (9.5 d/km)","Dhaulagiri (8.9 d/km)","Peri (2 d/km)","Manaslu (1.5 d/km)") , labels = c( "Khumbu (9.5 d/km)","Dhaulagiri (8.9 d/km)","Peri (2 d/km)","Manaslu (1.5 d/km)") ,ordered = TRUE))
+```
+
+## Plot 3
+<div style="text-align: justify;">
+In this plot, we examine how the number of days taken to summit a mountain relates to its peak height across different mountain ranges. We use `geom_smooth(method = "lm")` to fit linear trend lines, as it helps us to visualise and compare the general relationship between summit days and height within each range. To handle the skewed distribution of summit days (`SMTDAYS`), we apply a log transformation to the y-axis. We also scale peak height (`HEIGHTM`) in thousands of meters to make the values easier to interpret. Each mountain range is distinguished by range_label, and the slope of each line represents the estimated number of days required per kilometer of elevation gain. We then use the Viridis colour scale to enhance visual clarity and highlight differences across the ranges.
+</div>
+```{r fig.cap = "Plot 3. Linear regression plot of summit days vs peak height across Himalayan ranges. Slopes (in days/km) reflect climbing effort, with only ranges having over 20 data points included for reliability."}
+plot3 = ggplot(final_df, aes(x = HEIGHTM/1000, y = SMTDAYS, colour = range_label)) +
+  geom_smooth(method = "lm", se = T, size=1.2, alpha = 0.2) + 
+  scale_y_log10() +
+  scale_color_viridis_d(option = "H", name = "Mountain Range\n(Slope in days/km)") +
+  labs(x = "Peak Height (thousands)", 
+       y = "Days to Summit",
+       title = "Summit Days vs Height by Mountain Range",
+       subtitle = "Slope values show days required per kilometer of elevation gain") +
+  theme_minimal() +
+  theme(legend.position = c(1, 0.05),  
+        legend.justification = c("right", "bottom"),
+        legend.background = element_rect(fill = alpha("white", 0.7), color = NA),
+        legend.title = element_text(size = 8, face = "bold"),
+        legend.text = element_text(size = 7),
+        legend.key.size = unit(0.4, "cm"))
+plot3
+```
+
+## Data Analysis for Plot 3
+<div style="text-align: justify;">
+The graph clearly demonstrates a positive correlation between peak height and the number of days required to reach the summit across various Himalayan mountain ranges. As peak height increases, the time to summit also increases correspondingly. At higher elevations, climbers face reduced oxygen availability, extreme temperatures, and the need for extended acclimatisation, all of which significantly slow progress (Uphill Athlete, 2024). Climbers often need to pace themselves to prevent altitude sickness, spend additional time at camps waiting for adverse weather conditions to pass and navigate the challenges of harsh and unpredictable environments (Allen et al., 2021). These factors collectively lead to longer summit times at higher elevations compared to lower peaks.
+
+The variation in the gradients of the line graphs further indicates that the relationship between peak height and summit time is not strictly linear across all mountain ranges. Steeper line graphs suggest that for the same increase in peak height, the summit time increases more significantly in mountain ranges with steeper graphs compared to those with gentler slopes.  For example, mountain ranges like Khumbu (9.5 days/km) and Dhaulagiri (8.9 days/km), which exhibit steeper gradients, are characterised by harsher climbing conditions, likely due to the more significant challenges posed by higher elevations. In contrast, ranges with gentler slopes, such as Peri (2 days/km) and Manaslu (1.5 days/km), show a less dramatic increase in summit time with respect to the rise in peak height. This suggests that the difficulty of climbing increases more sharply in the steeper ranges, likely due to a combination of physical terrain and environmental factors.
+
+In Plot 2, which illustrates the distribution of termination reasons for failed expeditions, the mountain ranges Khumbu and Dhaulagiri further support our analysis of their harsh climbing conditions. These two ranges stand out as the only ones in our dataset where death or serious injury is listed as a termination reason for expeditions. This stark contrast highlights the extreme challenges faced by climbers in these regions. For instance, the Khumbu range includes the notoriously dangerous Khumbu Icefall, considered the most perilous section on the Everest route, where climbers face constant threats from collapsing ice towers and hidden crevasses (Panday, 2024). The presence of fatalities or severe injuries in these ranges suggests that the conditions are particularly unforgiving, with factors such as treacherous terrain, severe weather and oxygen deprivation likely contributing to the high risks associated with summiting.
+</div>
+
+# Conclusion
+<div style="text-align: justify;">
+The data visualisations highlight several important trends in the Himalayan mountaineering expeditions. Success rates generally decline with increasing peak height, reflecting the greater physical, environmental and logistical challenges of high altitudes. This trend is reinforced by the increased reliance on supplemental oxygen and an increased number of hired personnel in high-altitude ranges. However, anomalies like Khumbu, Annapurna and Kangchenjunga show high success rates despite their elevation likely due to experienced climbers and strong infrastructure supported by a high number of hired personnel. Weather remains the predominant cause of expedition termination, while health-related issues and time constraints become more prominent in higher ranges. Peri stands out with a fast summit pace but also shows elevated failure due to technical and logistical issues, possibly from rushed preparation. In Khumbu and Dhaulagiri, the summit time increases more sharply with the peak height, and they are the only ranges reporting fatalities or serious injuries, reflecting their harsher climbing conditions and extreme risk involved in climbing these peaks. In contrast, ranges like Peri and Manaslu suggest easier climbs with fewer delays and lower physical danger. These patterns help explain the variation in success and failure across the different mountain ranges and point to how altitude, terrain and climber experience interact to shape expedition outcomes.
+</div>
+
+# Contributions
+<div style="text-align: justify;">
+Akhila - Plot 1 and Plot 2, Analysis for plot 2, ideation for plots \n\
+Eunice - Data Cleaning, EDA, RMD collation \n\
+Kelly - Plot 3, Analysis for plot 3 and conclusion \n\
+Kheng Yan - Data Cleaning, EDA \n\
+Yanting - Plot 3, Analysis for plot 3 and conclusion \n\
+Zheng Min - Plot 1 and Plot 2, Analysis for plot 1, ideation for question of interest and plots\n\
+</div>
+
+# References 
+<div style="text-align: justify;">
+Data Science Learning Community. (2025, January 21). TidyTuesday: The History of Himalayan Mountaineering Expeditions [Data set]. GitHub. https://github.com/rfordatascience/tidytuesday/blob/main/data/2025/2025-01-21/readme.md
+
+Allen, C., Lyons, H., & Tsao, H. (2021, February). *Use of telemedicine in the management of dermatologic conditions: A systematic review*. *Journal of the American Academy of Dermatology, 84(1), 157–165*. [https://doi.org/10.1016/j.jaad.2020.04.088](https://doi.org/10.1016/j.jaad.2020.04.088)
+
+Benavides, A. (2025, March 4). *Lakpa Sherpa on the upcoming Everest season*. *ExplorersWeb*. [https://explorersweb.com/lakpa-sherpa-on-the-upcoming-everest-season/](https://explorersweb.com/lakpa-sherpa-on-the-upcoming-everest-season/)
+
+Boscoe, C. (2023, September 13). *10 of the best Himalayan treks*. *Strava Stories*. [https://stories.strava.com/articles/10-of-the-best-himalayan-treks](https://stories.strava.com/articles/10-of-the-best-himalayan-treks)
+
+Lamichhane, S., Ghimire, I., Pokhrel, A., Sharma, N. R., & Acharya, S. K. (2022). *High-altitude illness: Menace in Himalayas of Nepal*. *Annals of Medicine Surgery, 81*.[https://doi.org/10.1016/j.amsu.2022.104494](https://doi.org/10.1016/j.amsu.2022.104494)
+
+Panday, B. (2024, August 20). *Khumbu Icefall dangers: Challenges and use of drones on Everest*. *Nepal Social Treks*. [https://www.nepalsocialtreks.com/khumbu-icefall-dangers/](https://www.nepalsocialtreks.com/khumbu-icefall-dangers/)
+
+Shrestha, S. (2024, August 27). *The Khumbu Icefall: Dangerous area on Everest’s route*. *Himalayan Masters*. [https://himalayan-masters.com/khumbu-icefall/](https://himalayan-masters.com/khumbu-icefall/)
+
+Uphill Athlete. (2024, November 14). *How long does it take to climb Mount Everest?* *Uphill Athlete*. [https://uphillathlete.com/mountaineering/how-long-does-it-take-to-climb-mount-everest/](https://uphillathlete.com/mountaineering/how-long-does-it-take-to-climb-mount-everest/)
+
+Wilkinson, F. (2012, March 15). *The Khumbu Climbing Center: In the footsteps of Hillary and Norgay*. *National Geographic*. [https://www.nationalgeographic.com/adventure/article/sherpas-khumbu-climbing-center](https://www.nationalgeographic.com/adventure/article/sherpas-khumbu-climbing-center)
+</div>
